@@ -38,7 +38,7 @@ require_once(__DIR__ . '/vendor/autoload.php');
 
 // Configure base URL and HTTP basic authorization of Semux API Server
 $config = new Semux\Client\Configuration();
-$config->setHost("http://localhost:5171/v2.0.0")
+$config->setHost("http://localhost:5171/v2.1.0")
     ->setUsername('YOUR_USERNAME')
     ->setPassword('YOUR_PASSWORD');
 
@@ -61,8 +61,7 @@ https://semuxproject.github.io/semux-php-sdk/Semux/Client/Api/SemuxApi.html
 
 ## Examples
 
-- [Create wallets](./examples/create-wallets.php)
-- [Transfer coins](./examples/transfer-coins.php)
+[Index of Examples](./examples/README.md)
 
 ## Tests
 
