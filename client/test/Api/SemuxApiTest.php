@@ -31,7 +31,9 @@ namespace Semux\Client;
 use Semux\Client\Api\SemuxApi;
 use \Semux\Client\Configuration;
 use \Semux\Client\ApiException;
+use Semux\Client\Model\BlockType;
 use \Semux\Client\ObjectSerializer;
+use DateTime;
 
 /**
  * SemuxApiTest Class Doc Comment
@@ -62,7 +64,7 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
     public function setUp()
     {
         $config = new Configuration();
-        $config->setHost("http://0.0.0.0:5171/v2.0.0")->setUsername("user")->setPassword("pass");
+        $config->setHost("http://0.0.0.0:5171/v2.1.0")->setUsername("user")->setPassword("pass");
         $this->api = new SemuxApi(new \GuzzleHttp\Client(), $config);
     }
 
@@ -87,6 +89,8 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testAddNode()
     {
+        $response = $this->api->addNode("1.1.1.1:5161");
+        $this->assertTrue($response->getSuccess());
     }
 
     /**
@@ -96,6 +100,8 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testAddToBlacklist()
     {
+        $response = $this->api->addToBlacklist("1.1.1.1");
+        $this->assertTrue($response->getSuccess());
     }
 
     /**
@@ -105,6 +111,8 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testAddToWhitelist()
     {
+        $response = $this->api->addToWhitelist("1.1.1.1");
+        $this->assertTrue($response->getSuccess());
     }
 
     /**
@@ -123,6 +131,21 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testComposeRawTransaction()
     {
+        $response = $this->api->composeRawTransaction(
+            "MAINNET",
+            "TRANSFER",
+            0.005 * SEM,
+            1,
+            DEVNET_VALIDATOR,
+            1 * SEM,
+            1526365454 * 1000,
+            null
+        );
+        $this->assertTrue($response->getSuccess());
+        $this->assertEquals(
+            RAW_TX,
+            $response->getResult()
+        );
     }
 
     /**
@@ -132,6 +155,34 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testCreateAccount()
     {
+        $response = $this->api->createAccount();
+        $this->assertTrue($response->getSuccess());
+        $this->assertRegExp("%^0x[0-9a-f]{40}$%", $response->getResult());
+    }
+
+    /**
+     * Test case for createAccount with privateKey
+     */
+    public function testCreateAccountWithPrivateKey()
+    {
+        $response = $this->api->createAccount(null, "302e020100300506032b6570042204202c0ef9b2d169bf52333bf4f4ec00f429515a4ccc555245fe5242e83667c9a5e1");
+        $this->assertTrue($response->getSuccess());
+        $this->assertEquals("0x56ac912151f811714b3833c81997d0286fc5c5f7", $response->getResult());
+    }
+
+    /**
+     * Test case for deleteAccount
+     */
+    public function testDeleteAccount() {
+        $createAccountResponse = $this->api->createAccount();
+        $this->assertTrue($createAccountResponse->getSuccess());
+
+        $deleteAccountResponse = $this->api->deleteAccount($createAccountResponse->getResult());
+        $this->assertTrue($deleteAccountResponse->getSuccess());
+
+        $listAccountsResponse = $this->api->listAccounts();
+        $this->assertTrue($listAccountsResponse->getSuccess());
+        $this->assertNotContains($createAccountResponse->getResult(), $listAccountsResponse->getResult());
     }
 
     /**
@@ -141,6 +192,9 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetAccount()
     {
+        $response = $this->api->getAccount(DEVNET_VALIDATOR);
+        $this->assertTrue($response->getSuccess());
+        $this->assertEquals(DEVNET_VALIDATOR, $response->getResult()->getAddress());
     }
 
     /**
@@ -150,6 +204,36 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetAccountTransactions()
     {
+        $response = $this->api->getAccountTransactions("0x0123456789012345678901234567890123456789", 0, 100);
+        $this->assertTrue($response->getSuccess());
+        $this->assertInternalType("array", $response->getResult());
+    }
+
+    /**
+     * Test case for getAccountPendingTransactions
+     */
+    public function testGetAccountPendingTransactions() {
+        $transferResponse = $this->api->transfer(DEVNET_VALIDATOR, DEVNET_VALIDATOR, 1);
+        $this->assertTrue($transferResponse->getSuccess());
+
+        $pendingTxResponse = $this->api->getAccountPendingTransactions(DEVNET_VALIDATOR, 0, 100);
+        $this->assertNotEmpty($pendingTxResponse->getResult());
+        $this->assertEquals($transferResponse->getResult(), $pendingTxResponse->getResult()[sizeof($pendingTxResponse->getResult()) - 1]->getHash());
+    }
+
+    /**
+     * Test case for getAccountVotes
+     */
+    public function testGetAccountVotes() {
+        $response = $this->api->getAccountVotes(DEVNET_VALIDATOR);
+        $this->assertTrue($response->getSuccess());
+        $this->assertNotEmpty($response->getResult());
+
+        $this->assertEquals(DEVNET_VALIDATOR, $response->getResult()[0]->getDelegate()->getAddress());
+        $this->assertEquals(1 * 1e9, $response->getResult()[0]->getVotes());
+
+        $this->assertEquals(DEVNET_DELEGATE, $response->getResult()[1]->getDelegate()->getAddress());
+        $this->assertEquals(1 * 1e9, $response->getResult()[1]->getVotes());
     }
 
     /**
@@ -159,6 +243,10 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetBlockByHash()
     {
+        $response = $this->api->getBlockByHash(DEVNET_GENESIS_HASH);
+        $this->assertTrue($response->getSuccess());
+        $this->assertEquals(0, $response->getResult()->getNumber());
+        $this->assertEquals("2017-09-07T00:00:00+0000", (new \DateTime())->setTimestamp($response->getResult()->getTimestamp() / 1000)->format(DATE_ISO8601));
     }
 
     /**
@@ -168,6 +256,9 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetBlockByNumber()
     {
+        $response = $this->api->getBlockByNumber(0);
+        $this->assertTrue($response->getSuccess());
+        $this->assertEquals(DEVNET_GENESIS_HASH, $response->getResult()->getHash());
     }
 
     /**
@@ -177,6 +268,9 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetDelegate()
     {
+        $response = $this->api->getDelegate(DEVNET_VALIDATOR);
+        $this->assertTrue($response->getSuccess());
+        $this->assertEquals(DEVNET_VALIDATOR, $response->getResult()->getAddress());
     }
 
     /**
@@ -186,6 +280,9 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetDelegates()
     {
+        $response = $this->api->getDelegates();
+        $this->assertTrue($response->getSuccess());
+        $this->assertEquals(DEVNET_VALIDATOR, $response->getResult()[0]->getAddress());
     }
 
     /**
@@ -197,6 +294,7 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
     {
         $response = $this->api->getInfo();
         $this->assertTrue($response->getSuccess());
+        $this->assertEquals(DEVNET_VALIDATOR, $response->getResult()->getCoinbase());
     }
 
     /**
@@ -206,6 +304,9 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetLatestBlock()
     {
+        $response = $this->api->getLatestBlock();
+        $this->assertTrue($response->getSuccess());
+        $this->assertInstanceOf(BlockType::class, $response->getResult());
     }
 
     /**
@@ -215,6 +316,9 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetLatestBlockNumber()
     {
+        $response = $this->api->getLatestBlockNumber();
+        $this->assertTrue($response->getSuccess());
+        $this->assertGreaterThanOrEqual(0, $response->getResult());
     }
 
     /**
@@ -224,6 +328,8 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetPeers()
     {
+        $response = $this->api->getPeers();
+        $this->assertTrue($response->getSuccess());
     }
 
     /**
@@ -233,6 +339,9 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetPendingTransactions()
     {
+        $response = $this->api->getPendingTransactions();
+        $this->assertTrue($response->getSuccess());
+        $this->assertInternalType("array", $response->getResult());
     }
 
     /**
@@ -242,6 +351,8 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetRoot()
     {
+        $response = $this->api->getRoot();
+        $this->assertTrue($response->getSuccess());
     }
 
     /**
@@ -251,6 +362,12 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetTransaction()
     {
+        $response = $this->api->getTransaction("0x6bc468aed513042efca496fec6c0dab9c17b4d50b1408c41dfc4fba1fbc11132");
+        $this->assertTrue($response->getSuccess());
+        $this->assertEquals(
+            "0x6bc468aed513042efca496fec6c0dab9c17b4d50b1408c41dfc4fba1fbc11132",
+            $response->getResult()->getHash()
+        );
     }
 
     /**
@@ -260,6 +377,10 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetTransactionLimits()
     {
+        foreach (["TRANSFER", "DELEGATE", "VOTE", "UNVOTE"] as $type) {
+            $response = $this->api->getTransactionLimits($type);
+            $this->assertTrue($response->getSuccess());
+        }
     }
 
     /**
@@ -269,6 +390,9 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetValidators()
     {
+        $response = $this->api->getValidators();
+        $this->assertTrue($response->getSuccess());
+        $this->assertEquals([DEVNET_VALIDATOR], $response->getResult());
     }
 
     /**
@@ -278,6 +402,9 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetVote()
     {
+        $response = $this->api->getVote(DEVNET_VALIDATOR, DEVNET_VALIDATOR);
+        $this->assertTrue($response->getSuccess());
+        $this->assertEquals(1000000000, $response->getResult());
     }
 
     /**
@@ -287,6 +414,11 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testGetVotes()
     {
+        $response = $this->api->getVotes(DEVNET_VALIDATOR);
+        $this->assertTrue($response->getSuccess());
+        $this->assertEquals([
+            '0x23a6049381fd2cfb0661d9de206613b83d53d7df' => '1000000000'
+        ], $response->getResult());
     }
 
     /**
@@ -296,6 +428,9 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testListAccounts()
     {
+        $response = $this->api->listAccounts();
+        $this->assertTrue($response->getSuccess());
+        $this->assertArraySubset([DEVNET_VALIDATOR], $response->getResult());
     }
 
     /**
@@ -305,6 +440,14 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testRegisterDelegate()
     {
+        $delegateName = array_values(unpack('H*', "voter"))[0];
+        $response = $this->api->registerDelegate(
+            DEVNET_VOTER,
+            $delegateName,
+            0.005 * SEM
+        );
+        $this->assertTrue($response->getSuccess());
+        $this->assertRegExp(SEM_TX_ID_REGEXP, $response->getResult());
     }
 
     /**
@@ -314,6 +457,15 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testSignMessage()
     {
+        $response = $this->api->signMessage(
+            DEVNET_VALIDATOR,
+            "test message"
+        );
+        $this->assertTrue($response->getSuccess());
+        $this->assertEquals(
+            SIGNATURE,
+            $response->getResult()
+        );
     }
 
     /**
@@ -323,6 +475,15 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testSignRawTransaction()
     {
+        $response = $this->api->signRawTransaction(
+            RAW_TX,
+            DEVNET_VALIDATOR
+        );
+        $this->assertTrue($response->getSuccess());
+        $this->assertEquals(
+            SIGNED_RAW_TX,
+            $response->getResult()
+        );
     }
 
     /**
@@ -332,6 +493,14 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testTransfer()
     {
+        $response = $this->api->transfer(
+            DEVNET_VALIDATOR,
+            "0x0000000000000000000000000000000000000000",
+            1 * SEM,
+            0.005 * SEM
+        );
+        $this->assertTrue($response->getSuccess());
+        $this->assertRegExp(SEM_TX_ID_REGEXP, $response->getResult());
     }
 
     /**
@@ -341,6 +510,14 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testUnvote()
     {
+        $response = $this->api->unvote(
+            DEVNET_VALIDATOR,
+            DEVNET_DELEGATE,
+            1,
+            0.005 * SEM
+        );
+        $this->assertTrue($response->getSuccess());
+        $this->assertRegExp(SEM_TX_ID_REGEXP, $response->getResult());
     }
 
     /**
@@ -350,6 +527,13 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testVerifyMessage()
     {
+        $response = $this->api->verifyMessage(
+            DEVNET_VALIDATOR,
+            "test message",
+            SIGNATURE
+        );
+        $this->assertTrue($response->getSuccess());
+        $this->assertTrue($response->getValidSignature());
     }
 
     /**
@@ -359,5 +543,25 @@ class SemuxApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testVote()
     {
+        $response = $this->api->vote(
+            DEVNET_VOTER,
+            DEVNET_DELEGATE,
+            1,
+            0.005 * SEM
+        );
+        $this->assertTrue($response->getSuccess());
+        $this->assertRegExp(SEM_TX_ID_REGEXP, $response->getResult());
+    }
+
+    /**
+     * Test case for getSyncingProgress
+     */
+    public function testGetSyncingProgress() {
+        $response = $this->api->getSyncingProgress();
+        $this->assertTrue($response->getSuccess());
+        $this->assertFalse($response->getResult()->getSyncing());
+        $this->assertNull($response->getResult()->getStartingHeight());
+        $this->assertNull($response->getResult()->getCurrentHeight());
+        $this->assertNull($response->getResult()->getTargetHeight());
     }
 }
